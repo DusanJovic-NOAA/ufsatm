@@ -725,6 +725,34 @@
   type = real
   kind = kind_phys
   active = ( index_of_turbulent_kinetic_energy_in_tracer_concentration_array > 0 )
+[ten_u_pbl]
+  standard_name = tendency_of_x_wind_due_to_PBL
+  long_name = tendency of x wind calculated by one physics scheme
+  units = m s-2
+  dimensions = (horizontal_dimension,vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+[ten_v_pbl]
+  standard_name = tendency_of_y_wind_due_to_PBL
+  long_name = tendency of y wind calculated by one physics scheme
+  units = m s-2
+  dimensions = (horizontal_dimension,vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+[ten_u_conv]
+  standard_name = tendency_of_x_wind_due_to_convection
+  long_name = tendency of x wind calculated by one physics scheme
+  units = m s-2
+  dimensions = (horizontal_dimension,vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+[ten_v_conv]
+  standard_name = tendency_of_y_wind_due_to_convection
+  long_name = tendency of y wind calculated by one physics scheme
+  units = m s-2
+  dimensions = (horizontal_dimension,vertical_layer_dimension)
+  type = real
+  kind = kind_phys
 
 ########################################################################
 [ccpp-table-properties]
@@ -3392,7 +3420,7 @@
   dimensions = (horizontal_dimension,vertical_layer_dimension)
   type = real
   kind = kind_phys
-  active = (flag_for_chemistry_coupling)
+  active = (flag_for_chemistry_coupling .or. flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
 [pfl_lsan]
   standard_name = liquid_flux_due_to_large_scale_precipitation
   long_name = instantaneous 3D flux of liquid water from nonconvective precipitation
@@ -3400,7 +3428,7 @@
   dimensions = (horizontal_dimension,vertical_layer_dimension)
   type = real
   kind = kind_phys
-  active = (flag_for_chemistry_coupling)
+  active = (flag_for_chemistry_coupling .or. flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
 [htrlw]
   standard_name = updated_tendency_of_air_temperature_due_to_longwave_heating_on_physics_timestep
   long_name = total sky longwave heating rate on physics time step
@@ -4728,7 +4756,7 @@
   type = real
   kind = kind_phys
 [seed0]
-  standard_name = seed_random_numbers_RAS
+  standard_name = seed_random_numbers
   long_name = random number seed for the RAS scheme
   units = none
   dimensions = ()
@@ -5872,7 +5900,7 @@
   dimensions = ()
   type = logical
 [random_clds]
-  standard_name = flag_for_random_clouds_for_RAS
+  standard_name = flag_for_random_clouds
   long_name = flag for using random clouds with the RAS scheme
   units = flag
   dimensions = ()
@@ -5938,7 +5966,7 @@
   dimensions = ()
   type = integer
 [imfdeepcnv_samf]
-  standard_name = identifer_for_scale_aware_mass_flux_deep_convection
+  standard_name = identifier_for_scale_aware_mass_flux_deep_convection
   long_name = flag for SAMF deep convection scheme
   units = flag
   dimensions = ()
@@ -6030,6 +6058,34 @@
   dimensions = ()
   type = real
   kind = kind_phys
+[lbb1]
+  standard_name = tuning_parameter_for_updraft_velocity_entrainment_term
+  long_name = tuning parameter for updraft velocity entrainment term
+  units = 1
+  dimensions = ()
+  type = real
+  kind = kind_phys
+[lbb2]
+  standard_name = tuning_parameter_for_updraft_velocity_buoyancy_term
+  long_name = tuning parameter for updraft velocity buoyancy term
+  units = 1
+  dimensions = ()
+  type = real
+  kind = kind_phys
+[lbb3]
+  standard_name = tuning_parameter_for_updraft_velocity_shear_term
+  long_name = tuning parameter for updraft velocity shear term
+  units = 1
+  dimensions = ()
+  type = real
+  kind = kind_phys
+[dt_decay]
+  standard_name = tuning_parameter_for_updraft_decay_time
+  long_name = tuning parameter for updraft decay time
+  units = 1
+  dimensions = ()
+  type = real
+  kind = kind_phys
 [sigmab_coldstart]
   standard_name = flag_to_cold_start_for_sigmab_init
   long_name = flag to cold start for sigmab initialization
@@ -6054,6 +6110,12 @@
   units = none
   dimensions = ()
   type = integer
+[mlm]
+  standard_name = flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL
+  long_name = flag for mixed-layer model in TKE-EDMF PBL scheme
+  units = none
+  dimensions = ()
+  type = logical
 [conv_cf_opt]
   standard_name = option_for_convection_scheme_cloud_fraction_computation
   long_name = option for convection scheme cloud fraction computation
@@ -8714,7 +8776,7 @@
   dimensions = (horizontal_dimension,vertical_layer_dimension)
   type = real
   kind = kind_phys
-  active = (control_for_deep_convection_scheme == identifier_for_grell_freitas_deep_convection .or. control_for_deep_convection_scheme == identifier_for_c3_deep_convection .or. control_for_deep_convection_scheme == identifier_for_new_tiedtke_deep_convection .or. control_for_deep_convection_scheme == identifer_for_scale_aware_mass_flux_deep_convection .or. control_for_shallow_convection_scheme == identifier_for_scale_aware_mass_flux_shallow_convection .or. control_for_shallow_convection_scheme == identifier_for_c3_shallow_convection)
+  active = (control_for_deep_convection_scheme == identifier_for_grell_freitas_deep_convection .or. control_for_deep_convection_scheme == identifier_for_c3_deep_convection .or. control_for_deep_convection_scheme == identifier_for_new_tiedtke_deep_convection .or. control_for_deep_convection_scheme == identifier_for_scale_aware_mass_flux_deep_convection .or. control_for_shallow_convection_scheme == identifier_for_scale_aware_mass_flux_shallow_convection .or. control_for_shallow_convection_scheme == identifier_for_c3_shallow_convection)
 [cactiv]
   standard_name = counter_for_grell_freitas_convection
   long_name = convective activity memory
@@ -10673,4 +10735,36 @@
   type = real
   kind = kind_phys
   active = (do_lightning_threat_index_calculations)
+[eflux]
+  standard_name = total_energy_flux
+  long_name = total energy flux from mlm scheme
+  units = K m s-1
+  dimensions = (horizontal_dimension,vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+  active = (flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
+[rflux]
+  standard_name = radiative_flux
+  long_name = radiative flux from mlm scheme
+  units = K m s-1
+  dimensions = (horizontal_dimension,vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+  active = (flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
+[wflux]
+  standard_name = total_water_flux
+  long_name = total water flux from mlm scheme
+  units = kg kg-1 m s-1
+  dimensions = (horizontal_dimension,vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+  active = (flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
+[pflux]
+  standard_name = precipitation_flux
+  long_name = precipitation flux from mlm scheme
+  units = kg kg-1 m s-1
+  dimensions = (horizontal_dimension,vertical_layer_dimension)
+  type = real
+  kind = kind_phys
+  active = (flag_for_using_mixed_layer_model_in_TKE_EDMF_PBL)
 

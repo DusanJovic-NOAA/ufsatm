@@ -194,6 +194,14 @@ module GFS_typedefs
     real (kind=kind_phys), pointer :: gt0 (:,:)   => null()  !< updated temperature
     real (kind=kind_phys), pointer :: gq0 (:,:,:) => null()  !< updated tracers
 
+    !-- Out (process tendencies)
+    !-- PBL
+    real (kind=kind_phys), pointer :: ten_u_pbl(:,:)   => null()  !< Zonal-wind tendency ...
+    real (kind=kind_phys), pointer :: ten_v_pbl(:,:)   => null()  !< Meridional-wind tendency ...
+    !-- Convection
+    real (kind=kind_phys), pointer :: ten_u_conv(:,:)  => null()  !< Zonal-wind tendency due to convection scheme
+    real (kind=kind_phys), pointer :: ten_v_conv(:,:)  => null()  !< Meridional-wind tendency ...
+
     contains
       procedure :: create  => stateout_create  !<   allocate array data
   end type GFS_stateout_type
@@ -1223,8 +1231,10 @@ module GFS_typedefs
     logical              :: hybedmf         !< flag for hybrid edmf pbl scheme
     logical              :: satmedmf        !< flag for scale-aware TKE-based moist edmf
                                             !< vertical turbulent mixing scheme
-    logical              :: tte_edmf        !< flag for scale-aware TTE-based moist edmf
-                                            !< vertical turbulent mixing scheme
+    logical              :: tte_edmf        !< flag for scale-aware TTE-based moist edmf                                                                                           !< vertical turbulent mixing scheme
+!+mlm
+    logical              :: mlm             !< flag to use the Mixed-Layer Model downdraft mixing                                                                                  !< in satmedmfvdifq
+!-mlm
     logical              :: shinhong        !< flag for scale-aware Shinhong vertical turbulent mixing scheme
     logical              :: do_ysu          !< flag for YSU turbulent mixing scheme
     logical              :: dspheat         !< flag for tke dissipative heating
@@ -1309,6 +1319,11 @@ module GFS_typedefs
     real(kind=kind_phys) :: betascu         !< Tuning parameter for prog. closure shallow clouds
     real(kind=kind_phys) :: betamcu         !< Tuning parameter for prog. closure midlevel clouds
     real(kind=kind_phys) :: betadcu         !< Tuning parameter for prog. closure deep clouds
+    real(kind=kind_phys) :: lbb1            !< Tuning parameter for prog updraft entrainment term
+    real(kind=kind_phys) :: lbb2            !< Tuning parameter for prog updraft buoyancy term
+    real(kind=kind_phys) :: lbb3            !< Tuning parameter for prog updraft shear term
+    real(kind=kind_phys) :: dt_decay        !< Tuning parameter for prog updraft decay time
+    
     logical              :: sigmab_coldstart !< flag to cold start sigmab
 
     !--- MYNN parameters/switches
@@ -2087,6 +2102,13 @@ module GFS_typedefs
     real (kind=kind_phys), pointer :: qdiss      (:,:)   => null()  !< dissipation of tke
 
 ! Output - only in physics
+!+mlm
+    !--- mfscuq_mlm Diagnostic variables
+    real (kind=kind_phys), pointer :: eflux  (:,:)     => null()  !< total energy fluxfrom mlm closure
+    real (kind=kind_phys), pointer :: rflux  (:,:)     => null()  !< radiation flux from mlm closure
+    real (kind=kind_phys), pointer :: wflux  (:,:)     => null()  !< total water flux from mlm closure
+    real (kind=kind_phys), pointer :: pflux  (:,:)     => null()  !< preciptation flux from mlm closure
+!-mlm
     real (kind=kind_phys), pointer :: u10m   (:)     => null()   !< 10 meter u/v wind speed
     real (kind=kind_phys), pointer :: v10m   (:)     => null()   !< 10 meter u/v wind speed
     real (kind=kind_phys), pointer :: dpt2m  (:)     => null()   !< 2 meter dew point temperature
@@ -2412,6 +2434,17 @@ module GFS_typedefs
     Stateout%gv0 = clear_val
     Stateout%gt0 = clear_val
     Stateout%gq0 = clear_val
+
+    ! Physics tendencies for coupling
+    allocate (Stateout%ten_u_pbl  (IM,Model%levs))
+    allocate (Stateout%ten_v_pbl  (IM,Model%levs))
+    allocate (Stateout%ten_u_conv (IM,Model%levs))
+    allocate (Stateout%ten_v_conv (IM,Model%levs))
+
+    Stateout%ten_u_pbl  = clear_val
+    Stateout%ten_v_pbl  = clear_val
+    Stateout%ten_u_conv = clear_val
+    Stateout%ten_v_conv = clear_val
 
  end subroutine stateout_create
 
@@ -3273,16 +3306,21 @@ module GFS_typedefs
       Coupling%ca_micro  = clear_val
     endif
 
+    !+mlm
+    if (Model%mlm .or. Model%cplchm) then
+      allocate (Coupling%pfi_lsan  (IM,Model%levs))
+      allocate (Coupling%pfl_lsan  (IM,Model%levs))
+      Coupling%pfi_lsan  = clear_val
+      Coupling%pfl_lsan  = clear_val
+    endif
+    !-mlm
+    
     ! -- Aerosols coupling options
     if (Model%cplchm) then
       !--- outgoing instantaneous quantities
       allocate (Coupling%ushfsfci  (IM))
       ! -- instantaneous 3d fluxes of nonconvective ice and liquid precipitations
-      allocate (Coupling%pfi_lsan  (IM,Model%levs))
-      allocate (Coupling%pfl_lsan  (IM,Model%levs))
       Coupling%ushfsfci  = clear_val
-      Coupling%pfi_lsan  = clear_val
-      Coupling%pfl_lsan  = clear_val
     endif
 
     if (Model%cplchm .or. Model%cplflx .or. Model%cpllnd .or. Model%cpl_fire) then
@@ -3887,6 +3925,9 @@ module GFS_typedefs
     integer              :: isatmedmf      =  0                       !< flag for scale-aware TKE-based moist edmf scheme
                                                                       !<     0: initial version of satmedmf (Nov. 2018)
                                                                       !<     1: updated version of satmedmf (as of May 2019)
+!+mlm
+    logical              :: mlm              = .false.                !< flag for Mixed-Layer Model downdraft in PBL
+!-mlm
     logical              :: do_deep        = .true.                   !< whether to do deep convection
 
     logical              :: hwrf_samfdeep     = .false.               !< flag for HWRF SAMF deepcnv scheme
@@ -3922,6 +3963,11 @@ module GFS_typedefs
     real(kind=kind_phys) :: betascu           = 8.0 !< Tuning parameter for prog. closure shallow clouds
     real(kind=kind_phys) :: betamcu           = 1.0 !< Tuning parameter for prog. closure midlevel clouds
     real(kind=kind_phys) :: betadcu           = 2.0 !< Tuning parameter for prog. closure deep clouds
+    real(kind=kind_phys) :: lbb1              = 4.0 !< Tuning parameter for prog. updraft entrainment term
+    real(kind=kind_phys) :: lbb2              = 0.8 !< Tuning parameter for prog. updraft entrainment term
+    real(kind=kind_phys) :: lbb3              = 1.0 !< Tuning parameter for prog. updraft entrainment term
+    real(kind=kind_phys) :: dt_decay          = 3600. !< Tuning parameter for prog. updraft decay time
+    
     logical              :: sigmab_coldstart  = .false. !< flag to cold start sigmab
     ! *DH
     logical              :: do_myjsfc         = .false.               !< flag for MYJ surface layer scheme
@@ -4033,7 +4079,7 @@ module GFS_typedefs
                                                              !<.false. means use reference pressure of 1000 hPa to define potential temperature
                                                              !<       this is the alternative method proposed by GSL
 
-!--- vertical diffusion
+!--- vertical diffusion    
     real(kind=kind_phys) :: xkzm_m         = 1.0d0           !< [in] bkgd_vdif_m  background vertical diffusion for momentum
     real(kind=kind_phys) :: xkzm_h         = 1.0d0           !< [in] bkgd_vdif_h  background vertical diffusion for heat q
     real(kind=kind_phys) :: xkzm_s         = 1.0d0           !< [in] bkgd_vdif_s  sigma threshold for background mom. diffusion
@@ -4291,7 +4337,8 @@ module GFS_typedefs
                                ugwp_seq_update, var_ric, coef_ric_l, coef_ric_s, hurr_pbl,  &
                                do_myjsfc, do_myjpbl,                                        &
                                hwrf_samfdeep, hwrf_samfshal,progsigma,progomega,betascu,    &
-                               betamcu, betadcu,h2o_phys, pdfcld, shcnvcw, redrag,          &
+                               betamcu, betadcu, lbb1, lbb2, lbb3, dt_decay, h2o_phys,      &
+                               pdfcld, shcnvcw, redrag,                                     &
                                hybedmf, satmedmf, tte_edmf, sigmab_coldstart,               &
                                shinhong, do_ysu, dspheat, lheatstrg, lseaspray, cnvcld,     &
                                xr_cnvcld, random_clds, shal_cnv, imfshalcnv, imfdeepcnv,    &
@@ -4306,7 +4353,9 @@ module GFS_typedefs
                                pert_mp,pert_clds,pert_radtend,                              &
                           !--- Scale-aware 3D TKE scheme
                                sa3dtke,                                                     &
-                          !--- Rayleigh friction
+!+mlm                     !--- Mixed-layer closure in TKE-EDMF PBL
+                               mlm,                                                         &
+!-mlm                     !--- Rayleigh friction
                                prslrd0, ral_ts,  ldiag_ugwp, do_ugwp, do_tofd,              &
                           ! --- Ferrier-Aligo
                                spec_adv, rhgrd, icloud,                                     &
@@ -5204,24 +5253,47 @@ module GFS_typedefs
     Model%hwrf_samfdeep = hwrf_samfdeep
     Model%hwrf_samfshal = hwrf_samfshal
 
-    !--prognostic closure - check
-    if ((progsigma .and. imfdeepcnv/=2) .and. (progsigma .and. imfdeepcnv/=5)) then
-       write(*,*) 'Logic error: progsigma requires imfdeepcnv=2 or 5'
+    !-- Prognostic closure check
+    if (progsigma .and. .not. (                         &
+         imfdeepcnv == Model%imfdeepcnv_samf .or.             &
+         imfdeepcnv == Model%imfdeepcnv_c3   .or.             &
+         imfshalcnv == Model%imfshalcnv_samf .or.             &
+         imfshalcnv == Model%imfshalcnv_c3)) then
+       
+       write(*,*) 'Logic error: progsigma requires SAMF or C3 deep/shallow convection'
        stop
-    end if
+    endif
     Model%progsigma = progsigma
     Model%betascu = betascu
     Model%betamcu = betamcu
     Model%betadcu = betadcu
     Model%sigmab_coldstart = sigmab_coldstart
 
-    !--prognostic closure - check
-    if (progomega .and. imfdeepcnv/=2) then
-       write(*,*) 'Logic error: progomega requires imfdeepcnv=2'
+    !-- Prognostic closure check
+    if (progomega .and. .not. (                         &
+         imfdeepcnv == Model%imfdeepcnv_samf .or.             &
+         imfdeepcnv == Model%imfdeepcnv_c3   .or.             &
+         imfshalcnv == Model%imfshalcnv_samf .or.             &
+         imfshalcnv == Model%imfshalcnv_c3)) then
+       write(*,*) 'Logic error: progomega requires SAMF or C3 deep/shallow convection'
+       stop
+    endif
+    
+    Model%progomega = progomega
+    Model%lbb1 = lbb1
+    Model%lbb2 = lbb2
+    Model%lbb3 = lbb3
+    Model%dt_decay = dt_decay
+    
+    !--MLM closure check in PBL
+    if(mlm .and. imp_physics/=8) then
+       write(*,*) 'Logical error: Flag mlm in PBL scheme requires Thompson MP'
        stop
     end if
-    Model%progomega = progomega
-
+    !+mlm
+    Model%mlm = mlm
+    !-mlm
+    
     if (oz_phys .and. oz_phys_2015) then
        write(*,*) 'Logic error: can only use one ozone physics option (oz_phys or oz_phys_2015), not both. Exiting.'
        stop
@@ -7236,6 +7308,12 @@ module GFS_typedefs
       print *, ' satmedmf          : ', Model%satmedmf
       print *, ' tte_edmf          : ', Model%tte_edmf
       print *, ' isatmedmf         : ', Model%isatmedmf
+!+mlm
+      print *, ' mlm               : ', Model%mlm
+      print *, ' xkzm_m            : ', Model%xkzm_m
+      print *, ' xkzm_h            : ', Model%xkzm_h
+      print *, ' xkzm_s            : ', Model%xkzm_s
+!-mlm
       print *, ' shinhong          : ', Model%shinhong
       print *, ' do_ysu            : ', Model%do_ysu
       print *, ' dspheat           : ', Model%dspheat
@@ -7363,6 +7441,10 @@ module GFS_typedefs
       print *, 'betascu            : ', Model%betascu
       print *, 'betamcu            : ', Model%betamcu
       print *, 'betadcu            : ', Model%betadcu
+      print *, 'lbb1               : ', Model%lbb1
+      print *, 'lbb2               : ', Model%lbb2
+      print *, 'lbb3               : ', Model%lbb3
+      print *, 'dt_decay           : ', Model%dt_decay
       print *, 'sigmab_coldstart   : ', Model%sigmab_coldstart
       print *, ' '
       print *, 'cellular automata'
@@ -8234,6 +8316,16 @@ module GFS_typedefs
       allocate (Diag%pahi    (IM))
     endif
 
+    !MLM scheme in PBL:
+!+mlm
+    if (Model%mlm) then
+      allocate (Diag%eflux   (IM,Model%levs))
+      allocate (Diag%rflux   (IM,Model%levs))
+      allocate (Diag%wflux   (IM,Model%levs))
+      allocate (Diag%pflux   (IM,Model%levs))
+    endif
+!-mlm
+    
     ! F-A MP scheme
     if (Model%imp_physics == Model%imp_physics_fer_hires) then
      allocate (Diag%train     (IM,Model%levs))
@@ -8544,6 +8636,14 @@ module GFS_typedefs
     Diag%graupel    = zero
 
     !--- Out
+    !+mlm
+    if (Model%mlm) then
+      Diag%eflux      = zero
+      Diag%rflux      = zero
+      Diag%wflux      = zero
+      Diag%pflux      = zero
+    end if
+    !-mlm
     Diag%u10m       = zero
     Diag%v10m       = zero
     Diag%dpt2m      = zero
