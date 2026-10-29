@@ -259,8 +259,11 @@ target_include_directories(${DYCORE_TARGET} INTERFACE $<BUILD_INTERFACE:${CMAKE_
 if (FV3)
   target_link_libraries(${DYCORE_TARGET} PUBLIC fv3
                                          fv3ccpp
-					 stochastic_physics
-					 fms)
+                                         stochastic_physics
+                                         fms)
+  if(UFS_TRACING)
+    target_link_libraries(${DYCORE_TARGET} PUBLIC ufs_tracing)
+  endif()
   if(INLINE_POST)
     target_link_libraries(${DYCORE_TARGET} PUBLIC upp::upp)
   endif()
