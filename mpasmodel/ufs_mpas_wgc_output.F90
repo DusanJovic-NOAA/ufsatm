@@ -1761,10 +1761,12 @@ contains
 
    subroutine ufs_mpas_get_esmf_mesh(mesh, rc)
 
-      use mpas_derived_types, only : mpas_pool_type
-      use mpas_pool_routines, only : mpas_pool_get_subpool, mpas_pool_get_dimension, mpas_pool_get_array
-      use mpas_pool_routines, only : mpas_pool_get_config
-      use mpas_dmpar,         only : mpas_dmpar_sum_int_array, mpas_dmpar_bcast_ints, IO_NODE
+      use mpas_derived_types,  only : mpas_pool_type, field1DInteger
+
+      use mpas_pool_routines,  only : mpas_pool_get_subpool, mpas_pool_get_dimension, mpas_pool_get_array
+      use mpas_pool_routines,  only : mpas_pool_get_config, mpas_pool_get_field
+      use mpas_field_routines, only : mpas_duplicate_field, mpas_deallocate_field
+      use mpas_dmpar,          only : mpas_dmpar_exch_halo_field
 
       type(ESMF_Mesh), intent(out) :: mesh
       integer, intent(out) :: rc
@@ -1785,13 +1787,11 @@ contains
       integer, dimension(:,:), pointer :: cellsOnVertex, verticesOnCell
       integer, dimension(:), pointer :: nCellsOwnedIndices, nEdgesOwnedIndices, nVerticesOwnedIndices
       integer, pointer :: nCells, nVertices, vertexDegree
-      integer :: i, j, localpet, nprocs, iloc, istat
-      integer, dimension(:), pointer :: part_ids
+      integer :: i, j, localpet, nprocs, iloc
       integer :: nVertex_on_pet
-      character(len=StrKIND), pointer :: config_block_decomp_file_prefix
-      character(len=StrKIND) :: fname
-
-      integer, allocatable :: verticesOwnedByThisPET(:), new_verticesOwnedByThisPET(:)
+      type(field1DInteger), pointer :: indexToVertexIDField => null()
+      type(field1DInteger), pointer :: vertexOwnerField => null()
+      logical, allocatable :: is_node(:)
 
       rc = 0
 
@@ -1802,28 +1802,6 @@ contains
       end if
 
       localpet = domain_ptr % dminfo % my_proc_id
-      nprocs = domain_ptr % dminfo % nprocs
-
-      call mpas_pool_get_config(domain_ptr % blocklist % configs, 'config_block_decomp_file_prefix', config_block_decomp_file_prefix)
-      write(fname,'(A,I0)') trim(config_block_decomp_file_prefix), nprocs
-
-      allocate(part_ids(nCellsGlobal))
-      if (localpet == IO_NODE) then
-         open(unit=10,file=trim(fname), status='old', action='read', iostat=istat)
-         if (istat /= 0) then
-            write(0,*)'FIXME: ', trim(fname), ' is not present'
-            stop 1  !FIXME
-         end if
-         do i =1,nCellsGlobal
-            read(10,*,iostat=istat) part_ids(i)
-            if (istat /= 0) then
-               write(0,*)'FIXME: error reading ', trim(fname), ' line = ', j
-               stop 1  !FIXME
-            end if
-         end do
-         close(10)
-      end if
-      call mpas_dmpar_bcast_ints(domain_ptr % dminfo, nCellsGlobal, part_ids)
 
       call mpas_pool_get_subpool(domain_ptr % blocklist % structs, 'mesh', meshPool)
       call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
@@ -1861,67 +1839,57 @@ contains
          numElemsConn = numElemsConn + nEdgesOnCell(i)
       end do
 
-      allocate(verticesOwnedByThisPET(nVerticesGlobal))
-      allocate(new_verticesOwnedByThisPET(nVerticesGlobal))
-      verticesOwnedByThisPET = 0
-      new_verticesOwnedByThisPET = 0
-      do i = 1, nVerticesSolve
-         verticesOwnedByThisPET(indexToVertexID(i)) = localpet + 1
-      end do
-      call mpas_dmpar_sum_int_array(domain_ptr % dminfo, nVerticesGlobal, verticesOwnedByThisPET, new_verticesOwnedByThisPET)
-      verticesOwnedByThisPET = new_verticesOwnedByThisPET - 1
+      ! Owner (PET id) of every local vertex, including halo vertices, via a halo
+      ! exchange instead of a global-sized array plus a global reduction.
+      ! A duplicate of indexToVertexID serves as a vertex-decomposed integer field;
+      ! mpas_duplicate_field shares the original's send/recv exchange lists.
+      call mpas_pool_get_field(meshPool, 'indexToVertexID', indexToVertexIDField)
+      call mpas_duplicate_field(indexToVertexIDField, vertexOwnerField)
+      vertexOwnerField % array(:) = -1
+      vertexOwnerField % array(1:nVerticesSolve) = localpet
+      call mpas_dmpar_exch_halo_field(vertexOwnerField)
 
-      nVertex_on_pet = 0
+      ! A vertex is a node on this PET if at least one *owned* cell touches it.
+      ! Owned cells are local indices 1..nCellsSolve; the missing-neighbour dummy
+      ! is nCells+1 and is therefore excluded automatically.
+      allocate(is_node(nVertices))
       do i = 1, nVertices
-         do j = 1, vertexDegree
-            if (indexToCellID(cellsOnVertex(j,i)) > 0) then
-               if (localpet == part_ids(indexToCellID(cellsOnVertex(j,i)))) then
-                  nVertex_on_pet = nVertex_on_pet + 1
-                  goto 90
-               end if
-            end if
-         end do
-90       continue
+         is_node(i) = any(cellsOnVertex(1:vertexDegree, i) >= 1 .and. &
+                          cellsOnVertex(1:vertexDegree, i) <= nCellsSolve)
       end do
-      ! write(0,*) 'nVertex_on_pet = ', nVertex_on_pet
+      numNodes = count(is_node)
+      ! write(0,*) 'nVertex_on_pet = ', numNodes
 
-      numNodes = nVertex_on_pet
       allocate(nodeIds(numNodes))
       allocate(nodeCoords(2*numNodes))
       allocate(nodeOwners(numNodes))
-      allocate(locNodeID(nVerticesGlobal))
+      allocate(locNodeID(nVertices))
       locNodeID = 0
       iloc = 0
-      do i =1,nVertices
-         do j = 1, vertexDegree
-            if (indexToCellID(cellsOnVertex(j,i)) > 0) then
-               if (localpet == part_ids(indexToCellID(cellsOnVertex(j,i)))) then
-                  iloc = iloc + 1
-                  nodeIds(iloc) = indexToVertexID(i)
-                  nodeCoords((iloc-1)*2+1) = lonVertex(i)
-                  nodeCoords((iloc-1)*2+2) = latVertex(i)
-                  nodeOwners(iloc) = verticesOwnedByThisPET(indexToVertexID(i))
-                  ! nodeOwners(iloc) = maxval(part_ids(indexToCellID(cellsOnVertex(:,i))))
-                  locNodeID(indexToVertexID(i)) = iloc
-                  goto 92
-               end if
-            end if
-         end do
-92       continue
+      do i = 1, nVertices
+         if (.not. is_node(i)) cycle
+         iloc = iloc + 1
+         nodeIds(iloc) = indexToVertexID(i)
+         nodeCoords((iloc-1)*2+1) = lonVertex(i)
+         nodeCoords((iloc-1)*2+2) = latVertex(i)
+         ASSERT(vertexOwnerField % array(i) >= 0)
+         nodeOwners(iloc) = vertexOwnerField % array(i)
+         locNodeID(i) = iloc
       end do
-      ASSERT(iloc == nVertex_on_pet)
+      ASSERT(iloc == numNodes)
+      deallocate(is_node)
+      call mpas_deallocate_field(vertexOwnerField)
 
       allocate(elemConn(numElemsConn))
       ielemConn = 0
       do i = 1, nCellsSolve
          do j = 1, nEdgesOnCell(i)
             ielemConn = ielemConn + 1
-            ASSERT (locNodeID(indexToVertexID(verticesOnCell(j,i))) > 0)
-            elemConn(ielemConn) = locNodeID(indexToVertexID(verticesOnCell(j,i)))
+            ASSERT (locNodeID(verticesOnCell(j,i)) > 0)
+            elemConn(ielemConn) = locNodeID(verticesOnCell(j,i))
          end do
       end do
       ASSERT(ielemConn == numElemsConn)
-      ! write(0,*) 'numElemsConn = ', numElemsConn
 
       the_mpas_esmf_mesh = ESMF_MeshCreate(parametricDim=2, &
                                            spatialDim=2, &
