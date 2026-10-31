@@ -132,11 +132,7 @@ contains
       end if
       call mpas_dmpar_bcast_char(domain_ptr % dminfo, ufs_mpas_streams_content, IO_NODE)
 
-      ! hconfig = ESMF_HConfigCreate(filename='ufs_mpas_streams.yaml', rc=rc); ESMF_ERR(rc)
       hconfig = ESMF_HConfigCreate(content=ufs_mpas_streams_content, rc=rc); ESMF_ERR(rc)
-      if (localpet == IO_NODE) then
-         call ESMF_HConfigFileSave(hconfig, filename="saveMe.yml", rc=rc); ESMF_ERR(rc)
-      end if
 
       num_streams = ESMF_HConfigGetSize(hconfig, keyString='streams', rc=rc); ESMF_ERR(rc)
 
@@ -396,7 +392,6 @@ contains
       real(ESMF_KIND_R4), pointer    :: ptr_r4_d1(:), ptr_r4_d2(:,:), ptr_r4_d3(:,:,:)
       integer(ESMF_KIND_I4), pointer :: ptr_i4_d1(:), ptr_i4_d2(:,:)
 
-      integer :: frestart(1)
       integer :: i,j,k,n
       integer :: localpet
 
@@ -417,8 +412,6 @@ contains
       rc = 0
 
       ASSERT (size(output_vars) > 0)
-
-      frestart(:) = -1
 
       localpet = domain_ptr % dminfo % my_proc_id
 
@@ -1764,7 +1757,7 @@ contains
       use mpas_derived_types,  only : mpas_pool_type, field1DInteger
 
       use mpas_pool_routines,  only : mpas_pool_get_subpool, mpas_pool_get_dimension, mpas_pool_get_array
-      use mpas_pool_routines,  only : mpas_pool_get_config, mpas_pool_get_field
+      use mpas_pool_routines,  only : mpas_pool_get_field
       use mpas_field_routines, only : mpas_duplicate_field, mpas_deallocate_field
       use mpas_dmpar,          only : mpas_dmpar_exch_halo_field
 
@@ -1786,9 +1779,8 @@ contains
       real(kind=RKIND), dimension(:), pointer :: latCell, lonCell, latVertex, lonVertex
       integer, dimension(:,:), pointer :: cellsOnVertex, verticesOnCell
       integer, dimension(:), pointer :: nCellsOwnedIndices, nEdgesOwnedIndices, nVerticesOwnedIndices
-      integer, pointer :: nCells, nVertices, vertexDegree
-      integer :: i, j, localpet, nprocs, iloc
-      integer :: nVertex_on_pet
+      integer, pointer :: nVertices, vertexDegree
+      integer :: i, j, localpet, iloc
       type(field1DInteger), pointer :: indexToVertexIDField => null()
       type(field1DInteger), pointer :: vertexOwnerField => null()
       logical, allocatable :: is_node(:)
@@ -1804,7 +1796,6 @@ contains
       localpet = domain_ptr % dminfo % my_proc_id
 
       call mpas_pool_get_subpool(domain_ptr % blocklist % structs, 'mesh', meshPool)
-      call mpas_pool_get_dimension(meshPool, 'nCells', nCells)
       call mpas_pool_get_dimension(meshPool, 'nVertices', nVertices)
       call mpas_pool_get_dimension(meshPool, 'vertexDegree', vertexDegree)
       call mpas_pool_get_array(meshPool, 'indexToCellID', indexToCellID)
@@ -1858,7 +1849,6 @@ contains
                           cellsOnVertex(1:vertexDegree, i) <= nCellsSolve)
       end do
       numNodes = count(is_node)
-      ! write(0,*) 'nVertex_on_pet = ', numNodes
 
       allocate(nodeIds(numNodes))
       allocate(nodeCoords(2*numNodes))
@@ -1890,6 +1880,7 @@ contains
          end do
       end do
       ASSERT(ielemConn == numElemsConn)
+      deallocate(locNodeID)
 
       the_mpas_esmf_mesh = ESMF_MeshCreate(parametricDim=2, &
                                            spatialDim=2, &
@@ -2224,7 +2215,6 @@ contains
       logical :: is_unique
       logical :: isVarArray
       character(len=8) :: typeName
-      integer :: frestart(1)
       character(len=64) :: decomp_dim_name
       character(len=64), allocatable :: dimension_names(:)
       character(len=64) :: variable_names(3000)
@@ -2260,7 +2250,6 @@ contains
       rc = 0
 
       block => null()
-      frestart(:) = -1
 
       nullify(stream)
       if (.not. MPAS_stream_list_query(domain_ptr % streamManager % streams, trim(stream_name), stream, ierr=ierr)) then

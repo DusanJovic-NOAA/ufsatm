@@ -531,7 +531,7 @@ contains
          end if
       end if
 
-      if (mype == 0) print *,'frestart=',frestart(1:min(10,size(frestart)))/3600
+      if (mype == 0) print *,'frestart(hour)=',frestart(1:min(10,size(frestart)))/3600
    end subroutine init_frestart
 
    subroutine setup_exportdata(rc)
