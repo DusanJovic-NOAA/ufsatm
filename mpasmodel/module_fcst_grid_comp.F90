@@ -375,6 +375,7 @@ contains
       type(MPAS_Time_Type) :: mpasStartTime, mpasCurrTime, stepStopTime
       type(MPAS_Clock_type), pointer :: mpas_clock
       type(MPAS_TimeInterval_type) :: atmTimeStep
+      logical :: is_output_time, is_restart_time
 
       ! Initialize ESMF error message.
       rc = ESMF_SUCCESS
@@ -410,8 +411,16 @@ contains
       call ESMF_TimeIntervalGet(mpasCurrTime % t - StartTime, s=seconds, rc=rc)
 
       if (quilting) then
-         if (ANY(nint(output_fh(:)*3600.0) == seconds)) then
-            call ufs_mpas_wgc_output_update(seconds)
+         is_output_time  = ANY(nint(output_fh(:)*3600.0) == seconds)
+         is_restart_time = .false.
+         ! if (quilting_restart .and. allocated(frestart)) then
+         if (allocated(frestart)) then
+            is_restart_time = ANY(frestart(:) == seconds)
+         end if
+
+         ! Refresh the bundles, history bundles on output times, restart bundle on restart times.
+         if (is_output_time .or. is_restart_time) then
+            call ufs_mpas_wgc_output_update(seconds, is_output_time, is_restart_time)
          end if
       end if  ! quilting
 

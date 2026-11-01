@@ -287,11 +287,13 @@ contains
 
    end subroutine ufs_mpas_wgc_output_initialize
 
-   subroutine ufs_mpas_wgc_output_update(seconds)
+   subroutine ufs_mpas_wgc_output_update(seconds, is_output_time, is_restart_time)
 
       implicit none
 
       integer, intent(in) :: seconds
+      logical, intent(in) :: is_output_time   ! update history (regridded and non-restart native) bundles
+      logical, intent(in) :: is_restart_time  ! update the 'restart' native-mesh bundle
 
       integer :: i, rc
 
@@ -299,31 +301,31 @@ contains
 
          if (trim(ufs_mpas_outputs(i) % grid_type) /= 'mpas_mesh') then
 
-            if (ufs_mpas_outputs(i) % num_bilinear_vars > 0) then
+            if (is_output_time .and. ufs_mpas_outputs(i) % num_bilinear_vars > 0) then
                call ufs_mpas_update_output_bundle(ufs_mpas_outputs(i) % bilinear_field_bundle, &
                                                   ufs_mpas_outputs(i) % bilinear_vars(1:ufs_mpas_outputs(i) % num_bilinear_vars), &
                                                   rc=rc); ESMF_ERR(rc)
             end if
 
-            if (ufs_mpas_outputs(i) % num_nearest_dtos_vars > 0) then
+            if (is_output_time .and. ufs_mpas_outputs(i) % num_nearest_dtos_vars > 0) then
                call ufs_mpas_update_output_bundle(ufs_mpas_outputs(i) % nearest_dtos_field_bundle, &
                                                   ufs_mpas_outputs(i) % nearest_dtos_vars(1:ufs_mpas_outputs(i) % num_nearest_dtos_vars), &
                                                   rc=rc); ESMF_ERR(rc)
             end if
 
-            if (ufs_mpas_outputs(i) % num_nearest_stod_vars > 0) then
+            if (is_output_time .and. ufs_mpas_outputs(i) % num_nearest_stod_vars > 0) then
                call ufs_mpas_update_output_bundle(ufs_mpas_outputs(i) % nearest_stod_field_bundle, &
                                                   ufs_mpas_outputs(i) % nearest_stod_vars(1:ufs_mpas_outputs(i) % num_nearest_stod_vars), &
                                                   rc=rc); ESMF_ERR(rc)
             end if
 
-            if (ufs_mpas_outputs(i) % num_patch_vars > 0) then
+            if (is_output_time .and. ufs_mpas_outputs(i) % num_patch_vars > 0) then
                call ufs_mpas_update_output_bundle(ufs_mpas_outputs(i) % patch_field_bundle, &
                                                   ufs_mpas_outputs(i) % patch_vars(1:ufs_mpas_outputs(i) % num_patch_vars), &
                                                   rc=rc); ESMF_ERR(rc)
             end if
 
-            if (ufs_mpas_outputs(i) % num_conserve_vars > 0) then
+            if (is_output_time .and. ufs_mpas_outputs(i) % num_conserve_vars > 0) then
                call ufs_mpas_update_output_bundle(ufs_mpas_outputs(i) % conserve_field_bundle, &
                                                   ufs_mpas_outputs(i) % conserve_vars(1:ufs_mpas_outputs(i) % num_conserve_vars), &
                                                   rc=rc); ESMF_ERR(rc)
@@ -331,10 +333,10 @@ contains
          else
             ! 'mpas_mesh' stream; 'restart' or other native mesh streams
             if (trim(ufs_mpas_outputs(i) % name) == 'restart') then
-               if (ANY(frestart(:) == seconds)) then
+               if (is_restart_time) then
                   call ufs_mpas_update_restart_array_bundle(ufs_mpas_outputs(i) % native_mesh_array_bundle, stream_name='restart', rc=rc); ESMF_ERR(rc)
                end if
-            else
+            else if (is_output_time) then
                if (trim(ufs_mpas_outputs(i) % mpas_stream) == '') then
                   write(0,*)"ERROR: mpas_stream must be specified for outputs on 'mpas_mesh' grid type"
                   rc = 1
