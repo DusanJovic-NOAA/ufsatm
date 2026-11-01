@@ -491,15 +491,15 @@ contains
    subroutine init_frestart(Time_init, Time_end, num_restart_fh, restart_fh)
 
       type(ESMF_Time), intent(in)                 :: Time_init, Time_end
-      integer,         intent(in)                 :: num_restart_fh
+      integer, intent(in)                         :: num_restart_fh
       real, dimension(:), allocatable, intent(in) :: restart_fh
 
       ! local variables
-      integer         :: tmpvar, i, rc
-      logical         :: freq_restart
-      type(ESMF_Time) :: Time_restart
+      integer                 :: step_restart, i, rc
+      integer                 :: n_restart
+      logical                 :: freq_restart
+      type(ESMF_Time)         :: Time_restart
       type(ESMF_TimeInterval) :: Time_step_restart
-      integer         :: n_restart
 
       ! set up forecast time array that controls when to write out restart files
 
@@ -509,38 +509,41 @@ contains
          if (restart_fh(2) == -1) freq_restart = .true.
       end if
       if (freq_restart) then
-         if (restart_fh(1) >= 0) then
-            tmpvar = nint(restart_fh(1) * 3600)
-            call ESMF_TimeIntervalSet(Time_step_restart, s=tmpvar, rc=rc); ESMF_ERR(rc)
+         if (restart_fh(1) > 0) then
+            step_restart = nint(restart_fh(1)*3600)
+            call ESMF_TimeIntervalSet(Time_step_restart, s=step_restart, rc=rc); ESMF_ERR(rc)
             Time_restart = Time_init + Time_step_restart
-            if (restart_fh(1) > 0) then
-               n_restart = nint((Time_end - Time_init) / Time_step_restart)
-               allocate(frestart(n_restart))
-               frestart(1) = tmpvar
+            n_restart = int((Time_end - Time_init)/Time_step_restart) ! integer division: only complete intervals
+            if (n_restart > 0) then
+               allocate (frestart(n_restart))
+               frestart(1) = step_restart
                i = 1
                do while (Time_restart + Time_step_restart <= Time_end)
                   i = i + 1
-                  frestart(i) = frestart(i-1) + tmpvar
+                  frestart(i) = frestart(i-1) + step_restart
                   Time_restart = Time_restart + Time_step_restart
                end do
-            else
-               allocate(frestart(1))
-               frestart(1) = tmpvar
+            else ! no restarts, one negative element frestart, probably frequency longer than forecast length
+               frestart = [-1]
             end if
+         else if (restart_fh(1) == 0) then
+            frestart = [0]
+         else ! restart_fh(1) is negative, allocate one element frestart and set it to -1, no restarts
+            frestart = [-1]
          end if
-         ! otherwise it is an array with forecast time at which the restart files will be written out
+      ! otherwise it is an array with forecast time at which the restart files will be written out
       else if (num_restart_fh >= 1) then
-         allocate(frestart(num_restart_fh))
+         allocate (frestart(num_restart_fh))
          if (num_restart_fh == 1 .and. restart_fh(1) == 0) then
             call ESMF_TimeIntervalGet(Time_end - Time_init, s=frestart(1), rc=rc); ESMF_ERR(rc)
          else
-            do i=1,num_restart_fh
-               frestart(i) = nint(restart_fh(i) * 3600.)
+            do i = 1, num_restart_fh
+               frestart(i) = nint(restart_fh(i)*3600.)
             end do
          end if
       end if
 
-      if (mype == 0) print *,'frestart(hour)=',frestart(1:min(10,size(frestart)))/3600
+      if (mype == 0) print *, 'frestart(hour)=', frestart(1:min(10, size(frestart)))/3600.0
    end subroutine init_frestart
 
    subroutine setup_exportdata(rc)

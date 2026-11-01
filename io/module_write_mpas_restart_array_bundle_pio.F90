@@ -410,8 +410,8 @@ contains
                else if (typekind == ESMF_TYPEKIND_I4) then
 
                   call ESMF_ArrayGet(array, localDe=0, farrayPtr=array_i4_3d, rc=rc); ESMF_ERR_RETURN(rc)
-                  ASSERT (size(array_i4_2d, dim=1) == var_info_arr(i) % dimSizes(1))
-                  ASSERT (size(array_i4_2d, dim=2) == var_info_arr(i) % dimSizes(2))
+                  ASSERT (size(array_i4_3d, dim=1) == var_info_arr(i) % dimSizes(1))
+                  ASSERT (size(array_i4_3d, dim=2) == var_info_arr(i) % dimSizes(2))
                   call set_iodesc(shape(array_i4_3d), var_info_arr(i))
                   nullify (array_i4_3d)
                else
