@@ -1838,7 +1838,7 @@
      enddo !fcstItemCount
 
      !loop over all items in the imp_state_write and count output FieldBundles
-     call get_outfile(FBCount, outfilename, FBlist_outfilename, noutfile)
+     call get_outfile(fcstItemCount, outfilename, FBlist_outfilename, noutfile)
      wrt_int_state%FBCount = noutfile
 
      !create output field bundles
@@ -5638,9 +5638,9 @@
         integer(ESMF_KIND_I4), dimension(:,:,:),   pointer  :: ptr3d_i4
         integer(ESMF_KIND_I4), dimension(:,:,:,:), pointer  :: ptr4d_i4
 
-        real(ESMF_KIND_R4) :: missing_value_r4=9.99e20
-        real(ESMF_KIND_R8) :: missing_value_r8=9.99e20
-        real(ESMF_KIND_I4) :: missing_value_i4=-2147483648
+        real(ESMF_KIND_R4),    parameter :: missing_value_r4 = 9.99e20_ESMF_KIND_R4
+        real(ESMF_KIND_R8),    parameter :: missing_value_r8 = 9.99e20_ESMF_KIND_R8
+        integer(ESMF_KIND_I4), parameter :: missing_value_i4 = -huge(0_ESMF_KIND_I4) - 1
 
         call ESMF_FieldGet(field, name=fieldName, typekind=typekind, dimCount=dimCount, rank=rank, rc=rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return  ! bail out

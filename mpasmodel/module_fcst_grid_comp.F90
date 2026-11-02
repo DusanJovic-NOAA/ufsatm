@@ -193,8 +193,10 @@ contains
          call ufs_mpas_wgc_output_initialize(exportState, ngrids)
       end if  ! quilting
 
-      if (ngrids == 0) ngrids = 1
-      allocate(is_moving(ngrids))
+      ! ngrids counts only regridded output grids and may be 0 (e.g. only native
+      ! 'mpas_mesh' streams). The write component then creates no output grids.
+      ! Keep is_moving non-empty so the Info array is never zero-length.
+      allocate(is_moving(max(ngrids,1)))
       is_moving = .false.
       call ESMF_InfoGetFromHost(exportState, info=info, rc=rc); ESMF_ERR(rc)
       call ESMF_InfoSet(info, key='/NetCDF/FV3/ngrids', value=ngrids, rc=rc); ESMF_ERR(rc)

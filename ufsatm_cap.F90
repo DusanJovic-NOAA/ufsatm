@@ -1721,8 +1721,10 @@ module ufsatm_cap_mod
 
     real(kind=8)                :: timep2rs
 
-    character(len=ESMF_MAXSTR)  :: fb_name
+    character(len=ESMF_MAXSTR)  :: fb_name, ab_name
     type(ESMF_Info)             :: info
+    logical                     :: is_history_time, is_restart_time
+
 !-----------------------------------------------------------------------------
 
     rc = ESMF_SUCCESS
@@ -1758,7 +1760,10 @@ module ufsatm_cap_mod
       na = nint(time_elapsed/timeStep)
       call ESMF_TimeIntervalGet(time_elapsed, s=nfseconds, rc=rc)
 
-      output: if (ANY(nint(output_fh(:)*3600.0) == nfseconds) .or. ANY(frestart(:) == nfseconds)) then
+      is_history_time = ANY(nint(output_fh(:)*3600.0) == nfseconds)
+      is_restart_time = ANY(frestart(:) == nfseconds)
+
+      output: if (is_history_time .or. is_restart_time) then
 
         ! if (mype == 0 .or. mype == lead_wrttask(1)) print *,' aft fcst run output time=',nfseconds, &
         !   'FBcount=',FBcount,'na=',na
@@ -1769,6 +1774,14 @@ module ufsatm_cap_mod
         if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
 
         do j=1, FBCount
+
+          call ESMF_FieldBundleGet(fcstFB(j), name=fb_name, rc=rc)
+          if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+          if (fb_name(1:8) == "restart_") then
+            if (.not. is_restart_time) cycle
+          else
+            if (.not. is_history_time) cycle
+          end if
 
           if (is_moving_fb(j)) then
             ! Grid coords need to be redistributed to the mirror Grid on wrtComp
@@ -1791,6 +1804,14 @@ module ufsatm_cap_mod
         enddo
 
         do j=1, ABCount
+
+          call ESMF_ArrayBundleGet(fcstAB(j), name=ab_name, rc=rc)
+          if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+          if (ab_name(1:8) == "restart_") then
+            if (.not. is_restart_time) cycle
+          else
+            if (.not. is_history_time) cycle
+          end if
 
           ! execute the routehandle from fcstFB -> wrtFB (either Regrid() or Redist()), only if there are fields in the bundle
           call ESMF_ArrayBundleGet(fcstAB(j), arrayCount=arrayCount, rc=rc)

@@ -202,9 +202,22 @@ contains
 
          if (trim(ufs_mpas_outputs(i) % grid_type) /= 'mpas_mesh') then
 
-            ngrids = ngrids + 1  ! count only remapped output grids
-
             call parse_output_list_vars(ufs_mpas_outputs(i), rc)
+
+            ! A regridded stream with no variables creates no field bundle, so it
+            ! must not consume a grid_id. The write component expects a field
+            ! bundle for every grid_id in 1..ngrids.
+            if (ufs_mpas_outputs(i) % num_bilinear_vars     + &
+                ufs_mpas_outputs(i) % num_nearest_dtos_vars + &
+                ufs_mpas_outputs(i) % num_nearest_stod_vars + &
+                ufs_mpas_outputs(i) % num_patch_vars        + &
+                ufs_mpas_outputs(i) % num_conserve_vars == 0) then
+               write(0,*) "WARNING: regridded output stream '", trim(ufs_mpas_outputs(i) % name), &
+                          "' has no variables, skipping"
+               cycle
+            end if
+
+            ngrids = ngrids + 1  ! count only remapped output grids
 
             if (ufs_mpas_outputs(i) % num_bilinear_vars > 0) then
                call ufs_mpas_create_output_bundle(ufs_mpas_outputs(i) % bilinear_field_bundle, &
