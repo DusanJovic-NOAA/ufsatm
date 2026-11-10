@@ -21,6 +21,10 @@
 #   set(CMAKE_C_FLAGS_RELEASE "-O3")
 # endif()
 
+if (CMAKE_C_COMPILER_ID MATCHES IntelLLVM)
+  string(REPLACE "-xHost" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+endif()
+
 set(FETCH_MPAS_DATA OFF CACHE BOOL "Fetch mpas_data" FORCE)
 set(MPAS_CHECKOUT_EXTERNALS OFF CACHE BOOL "Use checkout_externals tool to clone dependencies" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
